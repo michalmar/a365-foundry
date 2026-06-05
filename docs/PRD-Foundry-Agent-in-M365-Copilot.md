@@ -8,7 +8,7 @@
 | **Target implementers** | GitHub Copilot + engineering, with M365 / Azure admin support |
 | **Source of truth** | Microsoft Learn (Foundry, M365 Agents SDK, Copilot extensibility), microsoft/Agents & Azure-Samples repos — see §15 |
 
-> ⚠️ Several capabilities referenced here are **Preview / Early Access Preview** as of mid-2026 (direct Foundry→M365 publish, Copilot Studio Foundry connect, A2A tool). Re-verify GA status at build time. Microsoft Agent Framework (MAF) itself reached **GA v1.0 (~March 2026)**.
+> ⚠️ Several adjacent capabilities are **Preview / Early Access Preview** as of mid-2026 (Copilot Studio Foundry connect, A2A tool). Re-verify GA status at build time. Microsoft Agent Framework (MAF) itself reached **GA v1.0 (~March 2026)**.
 
 ---
 
@@ -18,9 +18,7 @@ We have an AI agent already running in **Azure AI Foundry Agent Service**, autho
 
 Because the agent **owns its own model and orchestration** (it is not just a set of tools for Copilot's built-in LLM), the correct M365 surface is a **Custom Engine Agent (CEA)** — not a declarative agent.
 
-**Recommended delivery:** a two-track plan.
-- **Track 1 (Pilot, days):** Direct **Publish to Teams + M365 Copilot** from the Foundry portal — fastest path to real user feedback. Accept preview limits (no streaming, no citations, no file/image in Copilot).
-- **Track 2 (Production, weeks):** A **Python Custom Engine Agent built on the Microsoft 365 Agents SDK** in a proxy/host pattern, hosted on **Azure Container Apps** — full control of streaming, citations, identity (OBO/SSO), and multi-channel delivery. This is the durable answer.
+**Recommended delivery:** a single production path: a **Python Custom Engine Agent built on the Microsoft 365 Agents SDK** in a proxy/host pattern, hosted on **Azure Container Apps**. This path meets the product requirements for streaming, citations, identity, and production control.
 
 ---
 
@@ -44,7 +42,7 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 ### 2.4 Success metrics
 - Time-to-first-response < 3s; streamed tokens visible in production CEA.
 - ≥ 95% of downstream calls use a user (OBO) token.
-- Pilot in users' hands within 1 week; production CEA GA-track within 4–6 weeks.
+- Production CEA scaffold deployable within the first implementation milestone; Copilot/Teams validation through sideloaded app package before admin-scoped rollout.
 
 ---
 
@@ -70,15 +68,14 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 
 ## 5. Options analysis & decision
 
-| # | Path | Effort | Where logic runs | Status (mid-2026) | Key limitation | Use for |
-|---|------|--------|------------------|-------------------|----------------|---------|
-| A | **Direct Foundry → M365 publish** | Lowest | Foundry | Early Access Preview | No streaming/citations; no file/image in Copilot; no Private Link | **Pilot** |
-| B | **Copilot Studio "Connect to Foundry agent"** | Low | Foundry + CS | Preview | New Foundry portal only; CS message metering | Multi-agent orchestration w/ CS |
-| C | **CEA on M365 Agents SDK (proxy/host)** | High | Your host + Foundry | GA-track | You own infra/auth | **Production** |
-| D | **A2A protocol** | Med-High | External host | Preview | Foundry-published agent ≠ A2A *server*; must host externally | Cross-vendor multi-agent |
-| E | **MCP / declarative tool exposure** | Med | Copilot orchestrator | GA-ish | Not your model/orchestration | When Copilot's LLM is enough (not our case) |
+| # | Path | Effort | Where logic runs | Status (mid-2026) | Decision |
+|---|------|--------|------------------|-------------------|----------|
+| A | **CEA on M365 Agents SDK (proxy/host)** | High | Your host + Foundry | GA-track | **Selected** |
+| B | **Copilot Studio "Connect to Foundry agent"** | Low | Foundry + CS | Preview | Not selected; useful later only for Copilot Studio-led multi-agent orchestration |
+| C | **A2A protocol** | Med-High | External host | Preview | Not selected; useful later only for cross-vendor multi-agent scenarios |
+| D | **MCP / declarative tool exposure** | Med | Copilot orchestrator | GA-ish | Not selected; Copilot's LLM would own orchestration, which violates the requirement |
 
-**Decision:** **A for pilot, C for production.** Production implementation will use **Python + FastAPI + Microsoft 365 Agents SDK for Python + Azure Container Apps**. Rationale: the requirement that the MAF/Foundry agent own its reasoning rules out declarative agents (E). Among CEA routes, the Agents SDK proxy/host (C) is the only one that is simultaneously GA-track, full-fidelity (streaming + citations), and identity-flexible (OBO/SSO). B and D are reserved for multi-agent scenarios.
+**Decision:** Build only the production CEA path using **Python + FastAPI + Microsoft 365 Agents SDK for Python + Azure Container Apps**. Rationale: the MAF/Foundry agent must own its reasoning, tool use, streaming, and citations. The Agents SDK proxy/host is the only selected route that provides full-fidelity UX and identity control (OBO/SSO).
 
 ### 5.1 Resolved implementation choices
 
@@ -96,7 +93,7 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 
 ---
 
-## 6. Target architecture (Track 2 — production CEA)
+## 6. Target architecture — production CEA
 
 ```
 [End user] ── chat ──> [M365 Copilot / Teams host]
@@ -191,14 +188,7 @@ README.md
 
 ## 9. Implementation plan (phased, GitHub-Copilot-ready)
 
-### Phase 0 — Pilot via direct publish (Track 1)
-1. `az provider register --namespace Microsoft.BotService`
-2. Ensure publisher has **Azure Bot Service Contributor** on the target RG; ensure `agent.identity` is set.
-3. Foundry portal → open tested agent version → **Publish → Publish to Teams and Microsoft 365 Copilot**.
-4. Scope: **"Just you"** (no approval) for first validation; capture metadata (Name, version `major.minor.patch`, descriptions, Developer ≤32 chars).
-5. Validate in Copilot; gather feedback. (Note preview gaps: no streaming/citations, no file/image in Copilot.)
-
-### Phase 1 — Production CEA scaffold (Track 2)
+### Phase 1 — Production CEA scaffold
 1. Install **M365 Agents Toolkit** (VS Code) + **M365 Agents SDK for Python**.
 2. Scaffold the Python CEA host (C1) with FastAPI `/api/messages`, `pyproject.toml`, `uv.lock`, and Dockerfile.
 3. Wire **C2 Foundry connector** as a proxy to the existing Foundry project endpoint + Foundry agent name/ID (`FOUNDRY_AGENT=OperationsEngineering`).
@@ -206,7 +196,7 @@ README.md
 
 ### Phase 2 — Identity & fidelity
 5. Implement **OBO/SSO** (C3); Managed Identity host→Foundry.
-6. Implement **streaming** + **citations** adapter (the production differentiators vs direct publish).
+6. Implement **streaming** + **citations** adapter.
 
 ### Phase 3 — Infra, CI/CD, observability
 7. **C5 Bicep**: Bot Service, Azure Container Apps, Entra apps, Managed Identity, App Insights.
@@ -257,7 +247,7 @@ AZURE_TENANT=<Azure tenant id>
 M365_TENANT=<M365 tenant id>
 ```
 
-### 10.3 Connect Foundry agent (Path B inputs / Path C proxy target)
+### 10.3 Connect Foundry agent
 ```
 Project endpoint: https://<proj>-resource.services.ai.azure.com/api/projects/<proj>
 Agent name:       OperationsEngineering
@@ -290,7 +280,7 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 ## 11. M365 deployment & governance runbook
 
 1. Build app package with the Agents Toolkit (`manifest.json`, `m365agents.yml`, zip).
-2. Register **Azure Bot Service** (automatic in Track 1; Bicep in Track 2); set messaging endpoint to `/api/messages`; enable **M365 Copilot + Teams** channels.
+2. Register **Azure Bot Service** through Bicep/azd; set messaging endpoint to `/api/messages`; enable **M365 Copilot + Teams** channels.
 3. **Sideload** `appPackage.local.zip` (Teams → Apps → Manage your apps → Upload a custom app) → "Open with Copilot" to test.
 4. **Org publish:** choose "People in your organization" → **M365 admin approval** in the Microsoft 365 admin center → appears under *Built by your org*. Scope to pilot group first.
 5. Monitor via App Insights; iterate; expand scope.
@@ -300,7 +290,7 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 ## 12. Licensing (verify against live Microsoft pricing)
 
 - **M365 Copilot license** (~$30/user/mo) required for users to consume CEAs in Copilot; it **zero-rates** Copilot Studio message consumption for those users.
-- **Copilot Studio** (only if Path B/D): message **packs ($200 / 25,000 msgs / tenant / mo)** or **PAYG (~$0.01/msg)**; weights vary by action type.
+- **Copilot Studio** is not part of the selected implementation path. Re-check message-pack/PAYG pricing only if a future Copilot Studio orchestration path is added.
 - Web-grounded declarative agents can run with **no** Copilot license (not our scenario).
 - Azure costs: Foundry model usage, Azure Container Apps, Bot Service, App Insights.
 
@@ -318,22 +308,20 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 
 | Risk / limitation | Impact | Mitigation |
 |---|---|---|
-| Preview features shift | Rework | Re-verify status at build; keep Track 2 as durable path |
-| Direct-publish gaps (no streaming/citations/file/image in Copilot) | Pilot UX | Use only for pilot; production = CEA |
-| Copilot Studio connect = new Foundry portal only (classic → 404) | Blocked path | Ensure agents created in new portal |
+| Preview features shift | Rework | Re-verify status at build; isolate preview SDK calls behind adapters |
+| Copilot Studio connect = new Foundry portal only (classic → 404) | Future optional path blocked | Not in selected implementation path; revisit only if Copilot Studio orchestration is added |
 | Foundry-published agent ≠ A2A server | A2A blocked | Host MAF externally for A2A server |
 | RBAC pitfalls (Bot Contributor 403, null `agent.identity`, dev name >32) | Publish fails | Pre-flight checklist |
 | Exact CS message weights uncertain | Budget | Confirm live pricing |
 | Python SDK preview surface changes | Build/runtime breakage | Pin resolved preview versions in `uv.lock`; isolate SDK calls behind `foundry_client.py` and `agent_handler.py` |
 
-**Open questions:** (1) Which downstream APIs beyond Graph `User.Read` need OBO scopes? (2) Pilot user group & admin approver? (3) Region/data-residency constraints? (4) Whether to later supply an explicit Foundry Agent ID instead of resolving `OperationsEngineering` by name.
+**Open questions:** (1) Which downstream APIs beyond Graph `User.Read` need OBO scopes? (2) Pilot rollout group & admin approver for the CEA app package? (3) Region/data-residency constraints? (4) Whether to later supply an explicit Foundry Agent ID instead of resolving `OperationsEngineering` by name.
 
 ---
 
 ## 15. Acceptance criteria
 
-- [ ] Track 1 pilot live in Copilot for a test user.
-- [ ] Track 2 CEA responds in Copilot + Teams with streaming and citations.
+- [ ] Python CEA responds in Copilot + Teams with streaming and citations.
 - [ ] Downstream calls use OBO user token (verified in traces).
 - [ ] IaC provisions all resources; CI/CD deploys end-to-end.
 - [ ] Org-wide publish approved and scoped; observability dashboards live.
@@ -342,7 +330,6 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 
 ## 16. Sources (authoritative)
 
-- Publish a Foundry agent to M365 Copilot and Teams — learn.microsoft.com/azure/ai-foundry/agents/how-to/publish-copilot (05/2026, EAP)
 - Custom engine agents overview — learn.microsoft.com/microsoft-365/copilot/extensibility/overview-custom-engine-agent (06/2026)
 - Build & deploy CEAs with the Agents SDK — learn.microsoft.com/microsoft-365/copilot/extensibility/create-deploy-agents-sdk (06/2026)
 - M365 Agents SDK hub — learn.microsoft.com/microsoft-365/agents-sdk/ (06/2026)
