@@ -15,7 +15,8 @@ class BotAuthValidator:
     """Inbound auth boundary for the Microsoft 365 Agents SDK adapter.
 
     Local mode is open so tests and Bot Framework Emulator-style payloads can run without a tenant.
-    Production mode fails closed until the tenant-specific Agents SDK adapter is wired and configured.
+    Production mode fails closed until the tenant-specific Agents SDK adapter is wired
+    and configured.
     """
 
     def __init__(self, settings: Settings) -> None:

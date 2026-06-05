@@ -30,5 +30,6 @@ class OboTokenService:
         )
         access_token = result.get("access_token")
         if not access_token:
-            raise OboConfigurationError(result.get("error_description", "OBO token exchange failed"))
+            message = result.get("error_description", "OBO token exchange failed")
+            raise OboConfigurationError(message)
         return access_token

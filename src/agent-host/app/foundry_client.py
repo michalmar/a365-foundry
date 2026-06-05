@@ -22,16 +22,18 @@ class MockFoundryAgentClient:
         self, user_text: str, *, conversation_id: str | None = None, user_token: str | None = None
     ) -> AsyncIterable[AgentUpdate]:
         yield AgentUpdate(text_delta=f"OperationsEngineering mock response: {user_text}")
-        yield AgentUpdate(
-            citations=[Citation(title="Local mock citation", filepath="docs/PRD-Foundry-Agent-in-M365-Copilot.md")],
-            done=True,
+        citation = Citation(
+            title="Local mock citation",
+            filepath="docs/PRD-Foundry-Agent-in-M365-Copilot.md",
         )
+        yield AgentUpdate(citations=[citation], done=True)
 
 
 class FoundryAgentClient:
     """Azure AI Foundry Agents adapter.
 
-    Live Azure calls are kept behind this adapter so handlers and tests can run without tenant access.
+    Live Azure calls are kept behind this adapter so handlers and tests can run without
+    tenant access.
     """
 
     def __init__(
@@ -55,7 +57,7 @@ class FoundryAgentClient:
         agent_id = self._agent_id or self._resolve_agent_id(client)
         self._agent_id = agent_id
 
-        # The current Foundry SDK may expose either synchronous or async methods depending on version.
+        # The current Foundry SDK may expose sync or async methods depending on version.
         # Keep the surface isolated here and return buffered updates when streaming is unavailable.
         agents = getattr(client, "agents", None)
         if agents is None:
@@ -83,7 +85,11 @@ class FoundryAgentClient:
         if status not in {"completed", "succeeded", None}:
             raise FoundryClientError(f"Foundry run did not complete successfully: {status}")
 
-        messages = self._call_first_existing(agents, ["list_messages", "messages.list"], thread_id=thread_id)
+        messages = self._call_first_existing(
+            agents,
+            ["list_messages", "messages.list"],
+            thread_id=thread_id,
+        )
         text, citations = self._extract_latest_assistant_message(messages)
         yield AgentUpdate(text_delta=text, citations=citations, done=True)
 
@@ -130,7 +136,11 @@ class FoundryAgentClient:
                 try:
                     return target(**kwargs)
                 except TypeError:
-                    positional = [kwargs[key] for key in ("thread_id", "role", "content", "agent_id") if key in kwargs]
+                    positional = [
+                        kwargs[key]
+                        for key in ("thread_id", "role", "content", "agent_id")
+                        if key in kwargs
+                    ]
                     return target(*positional)
         raise FoundryClientError("None of these Foundry SDK methods exist: " + ", ".join(names))
 
