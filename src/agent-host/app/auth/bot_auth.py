@@ -28,7 +28,12 @@ class BotAuthValidator:
         if self._settings.require_bot_auth:
             raise HTTPException(
                 status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="REQUIRE_BOT_AUTH is enabled, but tenant-specific Microsoft 365 Agents SDK "
-                "JWT validation is not wired in this offline scaffold.",
+                detail=(
+                    "REQUIRE_BOT_AUTH=true, but tenant-specific Microsoft 365 Agents SDK "
+                    "JWT validation is not wired in this offline scaffold. Set "
+                    "REQUIRE_BOT_AUTH=false for local validation, or replace "
+                    "BotAuthValidator with the configured SDK adapter before enabling "
+                    "production inbound auth."
+                ),
             )
         return BotAuthResult(authorization_header=authorization, user_token=user_token)

@@ -61,10 +61,15 @@ class Settings(BaseSettings):
             missing.append("PROJECT_ENDPOINT")
         if not self.foundry_agent and not self.foundry_agent_id:
             missing.append("FOUNDRY_AGENT or FOUNDRY_AGENT_ID")
-        if self.require_bot_auth:
-            missing.append("Microsoft 365 Agents SDK auth adapter wiring")
         if missing and not self.should_use_mock_foundry:
             raise ValueError("Missing required production configuration: " + ", ".join(missing))
+        if self.require_bot_auth:
+            raise ValueError(
+                "REQUIRE_BOT_AUTH=true requires tenant-specific Microsoft 365 Agents SDK "
+                "JWT validation wiring. Leave REQUIRE_BOT_AUTH=false for offline/local "
+                "validation, or replace app.auth.bot_auth.BotAuthValidator with the "
+                "configured SDK adapter before enabling it."
+            )
 
 
 @lru_cache
