@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Author** | Michal Marusan (Sr Solution Engineer, CZ-BPA) |
-| **Status** | Draft for implementation |
+| **Status** | Ready for Python scaffold implementation |
 | **Last updated** | 2026-06-05 |
 | **Target implementers** | GitHub Copilot + engineering, with M365 / Azure admin support |
 | **Source of truth** | Microsoft Learn (Foundry, M365 Agents SDK, Copilot extensibility), microsoft/Agents & Azure-Samples repos — see §15 |
@@ -14,13 +14,13 @@
 
 ## 1. Summary
 
-We have an AI agent already running in **Azure AI Foundry Agent Service**, authored with the **Microsoft Agent Framework (MAF)**. This PRD defines how to make that agent consumable by end users **inside Microsoft 365 Copilot** (and Teams), the recommended architecture, the components and scripts to build, the authentication model, and the M365 deployment/governance steps.
+We have an AI agent already running in **Azure AI Foundry Agent Service**, authored with the **Microsoft Agent Framework (MAF)**. The existing Foundry agent is named **`OperationsEngineering`** and is configured through `.env` (`FOUNDRY_AGENT=OperationsEngineering`, `PROJECT_ENDPOINT`, model deployment names, and tenant identifiers). This PRD defines how to make that agent consumable by end users **inside Microsoft 365 Copilot** (and Teams), the recommended architecture, the components and scripts to build, the authentication model, and the M365 deployment/governance steps.
 
 Because the agent **owns its own model and orchestration** (it is not just a set of tools for Copilot's built-in LLM), the correct M365 surface is a **Custom Engine Agent (CEA)** — not a declarative agent.
 
 **Recommended delivery:** a two-track plan.
 - **Track 1 (Pilot, days):** Direct **Publish to Teams + M365 Copilot** from the Foundry portal — fastest path to real user feedback. Accept preview limits (no streaming, no citations, no file/image in Copilot).
-- **Track 2 (Production, weeks):** A **Custom Engine Agent built on the Microsoft 365 Agents SDK** in a proxy/host pattern — full control of streaming, citations, identity (OBO/SSO), and multi-channel delivery. This is the durable answer.
+- **Track 2 (Production, weeks):** A **Python Custom Engine Agent built on the Microsoft 365 Agents SDK** in a proxy/host pattern, hosted on **Azure Container Apps** — full control of streaming, citations, identity (OBO/SSO), and multi-channel delivery. This is the durable answer.
 
 ---
 
@@ -63,7 +63,7 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 - **M365 Copilot extensibility:**
   - **Declarative agent** = custom instructions/knowledge/tools on Copilot's own LLM/orchestrator.
   - **Custom Engine Agent (CEA)** = *you* bring the model + orchestration (Foundry/MAF), surfaced via **Azure Bot Service** + an app manifest. **This is our case.**
-- **M365 Agents SDK:** model/orchestrator-agnostic bridge — "supports integration with Azure Foundry, Semantic Kernel, OpenAI Agents, LangChain, or custom-built solutions." Exposes `/api/messages`, registers with Azure Bot Service, publishes to Copilot/Teams.
+- **M365 Agents SDK:** model/orchestrator-agnostic bridge — "supports integration with Azure Foundry, Semantic Kernel, OpenAI Agents, LangChain, or custom-built solutions." The production implementation will use the **Python SDK** with a FastAPI-compatible host exposing `/api/messages`, registered with Azure Bot Service, and published to Copilot/Teams.
 - **M365 Agents Toolkit (VS Code):** scaffolds the app package — `manifest.json`, `m365agents.yml`, provisioning.
 
 ---
@@ -78,7 +78,21 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 | D | **A2A protocol** | Med-High | External host | Preview | Foundry-published agent ≠ A2A *server*; must host externally | Cross-vendor multi-agent |
 | E | **MCP / declarative tool exposure** | Med | Copilot orchestrator | GA-ish | Not your model/orchestration | When Copilot's LLM is enough (not our case) |
 
-**Decision:** **A for pilot, C for production.** Rationale: the requirement that the MAF/Foundry agent own its reasoning rules out declarative agents (E). Among CEA routes, the Agents SDK proxy/host (C) is the only one that is simultaneously GA-track, full-fidelity (streaming + citations), and identity-flexible (OBO/SSO). B and D are reserved for multi-agent scenarios.
+**Decision:** **A for pilot, C for production.** Production implementation will use **Python + FastAPI + Microsoft 365 Agents SDK for Python + Azure Container Apps**. Rationale: the requirement that the MAF/Foundry agent own its reasoning rules out declarative agents (E). Among CEA routes, the Agents SDK proxy/host (C) is the only one that is simultaneously GA-track, full-fidelity (streaming + citations), and identity-flexible (OBO/SSO). B and D are reserved for multi-agent scenarios.
+
+### 5.1 Resolved implementation choices
+
+| Area | Resolution |
+|---|---|
+| Existing Foundry agent | Use the already deployed Foundry agent named **`OperationsEngineering`**. Resolve it from `.env` via `FOUNDRY_AGENT`; if only the name is supplied, the host resolves the agent ID at startup from the Foundry project. |
+| Foundry project | Use `.env` `PROJECT_ENDPOINT`. Do not hard-code endpoint or tenant values in source. |
+| Model deployments | Use `.env` deployment names for chat and summary behavior. |
+| Backend language | **Python**, managed with **UV**. Target the newest Python version that is compatible with the M365 Agents SDK and Azure SDK dependency set; start with Python 3.13 unless Python 3.14 compatibility is verified during build. |
+| Hosting | **Azure Container Apps**. |
+| Downstream scopes | Start with least-privilege OBO-ready Graph scopes (`openid`, `profile`, `offline_access`, `User.Read`) and add LOB/API-specific delegated scopes when known. |
+| Streaming/citations | Implement an internal adapter boundary from the start. Stream text deltas when the Foundry SDK supports them; map citation/file/reference metadata into M365 activity attachments/entities where available, with graceful non-streaming fallback for preview SDK gaps. |
+| SDK versions | Use latest available SDKs, including preview packages when required for Foundry/M365 CEA support. Pin resolved versions in `uv.lock`. |
+| Repo state | No scaffold exists yet; implementation must create the scaffold. |
 
 ---
 
@@ -91,11 +105,11 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
                     [Azure Bot Service]  ◄── Entra app reg (Bot identity)
                               │  POST /api/messages  (JWT validated)
                               ▼
-        [M365 Agents SDK app — Azure Container Apps / App Service]
-           • ActivityHandler / ChatClientAgent (MAF)
+        [Python M365 Agents SDK app — Azure Container Apps]
+           • FastAPI /api/messages + Agents SDK ActivityHandler
            • Streaming + citations adapter
            • OBO token exchange (user → downstream)
-                              │  IChatClient / azure-ai-projects
+                              │  azure-ai-projects / Foundry Agents SDK
                               ▼
                  [Azure AI Foundry Agent Service]
                    • model (gpt-4.1 / 4o) + tools + MCP
@@ -121,21 +135,30 @@ Governance/build plane:
 
 | ID | Component | Tech | Notes |
 |----|-----------|------|-------|
-| C1 | **Agents SDK host app** | .NET 8 ASP.NET Core (primary) or Python FastAPI | Exposes `/api/messages`; hosts/forwards to MAF agent |
-| C2 | **Foundry connector** | `Microsoft.Extensions.AI` `IChatClient` / `azure-ai-projects` | Calls Foundry agent via project endpoint + Agent Id, or hosts MAF in-process |
-| C3 | **Auth module** | Entra ID, OBO, Bot JWT validation | User SSO + downstream OBO; Managed Identity host→Foundry |
+| C1 | **Agents SDK host app** | Python 3.13+ FastAPI + M365 Agents SDK for Python | Exposes `/api/messages`; forwards to the existing Foundry/MAF agent |
+| C2 | **Foundry connector** | `azure-ai-projects` / Foundry Agents SDK preview packages | Uses `PROJECT_ENDPOINT` + `FOUNDRY_AGENT=OperationsEngineering`; resolves Agent ID from name when needed |
+| C3 | **Auth module** | Entra ID, OBO, Bot JWT validation, Azure Identity | User SSO + downstream OBO; Managed Identity host→Foundry |
 | C4 | **App package** | Teams manifest v1.22 + `m365agents.yml` | `copilotAgents.customEngineAgents` binding |
-| C5 | **IaC** | Bicep/azd | Bot Service, Container App, Entra apps, App Insights, Managed Identity |
-| C6 | **CI/CD** | GitHub Actions | Build, provision, deploy, package, publish |
+| C5 | **IaC** | Bicep/azd | Bot Service, Azure Container Apps, Entra apps, App Insights, Managed Identity |
+| C6 | **CI/CD** | GitHub Actions + UV | Build, test, provision, deploy, package, publish |
 | C7 | **Observability** | OpenTelemetry → App Insights | Trace turn → Foundry call → tool calls |
 
 ### Suggested repo layout
 ```
 /src
-  /agent-host            # C1/C2/C3 (.NET ASP.NET Core Agents SDK app)
-    Program.cs
-    AgentHandler.cs      # ActivityHandler → MAF agent / Foundry proxy
-    Auth/OboTokenService.cs
+  /agent-host            # C1/C2/C3 (Python FastAPI + M365 Agents SDK app)
+    pyproject.toml
+    uv.lock
+    Dockerfile
+    app/
+      main.py            # FastAPI entrypoint exposing /api/messages
+      config.py          # .env/config binding and validation
+      agent_handler.py   # ActivityHandler → Foundry proxy
+      foundry_client.py  # PROJECT_ENDPOINT + FOUNDRY_AGENT resolver/invoker
+      streaming.py       # streaming + citations adapter
+      auth/
+        obo_token_service.py
+        bot_auth.py
   /appPackage            # C4
     manifest.json
     color.png  outline.png
@@ -155,8 +178,8 @@ README.md
 
 - **Inbound (Copilot/Teams → host):** Azure Bot Service posts to `/api/messages`; the Agents SDK validates the inbound JWT. Bot resource auth = **User-Assigned Managed Identity** (preferred) or Federated Credentials; avoid client secrets in production.
 - **User SSO:** Teams/Copilot SSO surfaces the user token to the host.
-- **Downstream (OBO):** exchange the user token for Graph/LOB scopes via **On-Behalf-Of**. Use the `obo-authorization` / `auto-signin` samples in microsoft/Agents as the reference.
-- **Host → Foundry:** **Managed Identity** + `DefaultAzureCredential` (no API keys in prod). API keys are dev-only.
+- **Downstream (OBO):** exchange the user token for Graph/LOB scopes via **On-Behalf-Of**. Initial least-privilege scope set: `openid`, `profile`, `offline_access`, `User.Read`; add additional Graph/LOB delegated scopes only when a concrete downstream call requires them. Use the `obo-authorization` / `auto-signin` samples in microsoft/Agents as the reference.
+- **Host → Foundry:** **Managed Identity** + `DefaultAzureCredential` (no API keys in prod). API keys are dev-only. The Python connector reads `PROJECT_ENDPOINT` and `FOUNDRY_AGENT` from environment/config and resolves the agent ID at startup.
 - **`agent.identity` must not be null** for the direct-publish path; publisher needs **Azure Bot Service Contributor** on the RG.
 - **Governance (optional):** assign the agent an Entra **agent identity / Blueprint Identity** for observability and revocation.
 
@@ -176,9 +199,9 @@ README.md
 5. Validate in Copilot; gather feedback. (Note preview gaps: no streaming/citations, no file/image in Copilot.)
 
 ### Phase 1 — Production CEA scaffold (Track 2)
-1. Install **M365 Agents Toolkit** (VS Code) + **Agents SDK**.
-2. Scaffold the CEA host (C1) with `/api/messages`.
-3. Wire **C2 Foundry connector** (in-process MAF or proxy to Foundry project endpoint + Agent Id).
+1. Install **M365 Agents Toolkit** (VS Code) + **M365 Agents SDK for Python**.
+2. Scaffold the Python CEA host (C1) with FastAPI `/api/messages`, `pyproject.toml`, `uv.lock`, and Dockerfile.
+3. Wire **C2 Foundry connector** as a proxy to the existing Foundry project endpoint + Foundry agent name/ID (`FOUNDRY_AGENT=OperationsEngineering`).
 4. Add **manifest** binding (C4).
 
 ### Phase 2 — Identity & fidelity
@@ -186,8 +209,8 @@ README.md
 6. Implement **streaming** + **citations** adapter (the production differentiators vs direct publish).
 
 ### Phase 3 — Infra, CI/CD, observability
-7. **C5 Bicep**: Bot Service, Container App, Entra apps, Managed Identity, App Insights.
-8. **C6 GitHub Actions**: build → provision (azd) → deploy → package → publish.
+7. **C5 Bicep**: Bot Service, Azure Container Apps, Entra apps, Managed Identity, App Insights.
+8. **C6 GitHub Actions**: UV sync/test → container build → provision (azd) → deploy → package → publish.
 9. **C7 OpenTelemetry** tracing.
 
 ### Phase 4 — Publish & govern
@@ -198,59 +221,47 @@ README.md
 
 ## 10. Reference code & scripts
 
-> Patterns adapted from MIT/Apache-licensed Microsoft samples: `microsoft/Agents` (`samples/dotnet/Agent Framework/AgentFrameworkWeather`) and `Azure-Samples/m365-custom-engine-agents`. Treat as scaffolding — adjust namespaces/versions at build time.
+> Patterns adapted from MIT/Apache-licensed Microsoft samples: `microsoft/Agents` Python auth/OBO samples and `Azure-Samples/m365-custom-engine-agents`. Treat as scaffolding — adjust package names, namespaces, and versions at build time because the Python CEA/Foundry surfaces may require latest preview SDKs.
 
-### 10.1 .NET CEA host — MAF agent over `/api/messages`
-```csharp
-// Program.cs — ASP.NET Core M365 Agents SDK host wrapping a MAF agent
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
-using Azure.AI.OpenAI;
-using Azure.Identity;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Foundry / Azure OpenAI surfaced as IChatClient (Managed Identity, no keys)
-IChatClient chat = new AzureOpenAIClient(
-        new Uri(builder.Configuration["Foundry:Endpoint"]!),
-        new DefaultAzureCredential())
-    .GetChatClient(builder.Configuration["Foundry:Deployment"] ?? "gpt-4.1")
-    .AsIChatClient();
-
-AIAgent agent = chat.CreateAIAgent(
-    instructions: "You are <domain> assistant.",
-    name: "FoundryCEA",
-    tools: [ AIFunctionFactory.Create(MyTools.Lookup) ]);
-
-builder.Services.AddSingleton(agent);
-// builder.Services.AddAgentsSdk(...);  // register Agents SDK adapter + auth
-var app = builder.Build();
-
-app.MapPost("/api/messages", async (HttpRequest req, AIAgent a) =>
-{
-    // adapter.ProcessAsync(req, res, async (turnContext, ct) => {
-    //   await foreach (var update in a.RunStreamingAsync(turnContext.Activity.Text, ct))
-    //       await turnContext.StreamReply(update);   // streaming to Copilot
-    // });
-});
-app.Run();
-```
-
-### 10.2 Python proxy host — forward to Foundry/MAF backend
+### 10.1 Python CEA host — forward to existing Foundry/MAF backend
 ```python
+from fastapi import FastAPI, Request, Response
 from microsoft.agents.hosting.core import ActivityHandler, TurnContext
+
+from app.config import Settings
+from app.foundry_client import FoundryAgentClient
+
+settings = Settings.from_env()
+foundry = FoundryAgentClient(settings)
+app = FastAPI()
 
 class ProxyAgent(ActivityHandler):
     async def on_message_activity(self, turn_context: TurnContext):
         user_text = turn_context.activity.text
-        reply = await call_foundry_backend(user_text)   # project endpoint + Agent Id
-        await turn_context.send_activity(reply)
+        async for update in foundry.stream_message(user_text, turn_context):
+            await send_stream_or_buffered_activity(turn_context, update)
+
+@app.post("/api/messages")
+async def messages(request: Request):
+    # Agents SDK adapter validates Bot JWT and dispatches to ProxyAgent.
+    return Response(status_code=202)
+```
+
+### 10.2 Runtime configuration
+```bash
+PROJECT_ENDPOINT=<Foundry project endpoint>
+FOUNDRY_AGENT=OperationsEngineering
+AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=<chat deployment>
+AZURE_OPENAI_SUMMARY_DEPLOYMENT_NAME=<summary deployment>
+AZURE_TENANT=<Azure tenant id>
+M365_TENANT=<M365 tenant id>
 ```
 
 ### 10.3 Connect Foundry agent (Path B inputs / Path C proxy target)
 ```
 Project endpoint: https://<proj>-resource.services.ai.azure.com/api/projects/<proj>
-Agent Id:         asst_xxxxxxxx
+Agent name:       OperationsEngineering
+Agent Id:         resolved from Foundry by name at startup, or supplied explicitly if needed
 ```
 
 ### 10.4 Manifest snippet (C4)
@@ -265,7 +276,8 @@ Agent Id:         asst_xxxxxxxx
 ### 10.5 Provisioning script (excerpt)
 ```bash
 az provider register --namespace Microsoft.BotService
-azd up        # provisions Bicep (Bot, Container App, Entra, App Insights) + deploys
+uv sync
+azd up        # provisions Bicep (Bot, Container Apps, Entra, App Insights) + deploys
 ```
 
 ### 10.6 Local dev tunnel
@@ -290,7 +302,7 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 - **M365 Copilot license** (~$30/user/mo) required for users to consume CEAs in Copilot; it **zero-rates** Copilot Studio message consumption for those users.
 - **Copilot Studio** (only if Path B/D): message **packs ($200 / 25,000 msgs / tenant / mo)** or **PAYG (~$0.01/msg)**; weights vary by action type.
 - Web-grounded declarative agents can run with **no** Copilot license (not our scenario).
-- Azure costs: Foundry model usage, Container App/App Service, Bot Service, App Insights.
+- Azure costs: Foundry model usage, Azure Container Apps, Bot Service, App Insights.
 
 ---
 
@@ -312,8 +324,9 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 | Foundry-published agent ≠ A2A server | A2A blocked | Host MAF externally for A2A server |
 | RBAC pitfalls (Bot Contributor 403, null `agent.identity`, dev name >32) | Publish fails | Pre-flight checklist |
 | Exact CS message weights uncertain | Budget | Confirm live pricing |
+| Python SDK preview surface changes | Build/runtime breakage | Pin resolved preview versions in `uv.lock`; isolate SDK calls behind `foundry_client.py` and `agent_handler.py` |
 
-**Open questions:** (1) In-process MAF host vs proxy to existing Foundry project? (2) Which downstream APIs need OBO scopes? (3) Pilot user group & admin approver? (4) Region/data-residency constraints?
+**Open questions:** (1) Which downstream APIs beyond Graph `User.Read` need OBO scopes? (2) Pilot user group & admin approver? (3) Region/data-residency constraints? (4) Whether to later supply an explicit Foundry Agent ID instead of resolving `OperationsEngineering` by name.
 
 ---
 
@@ -336,7 +349,7 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 - Connect to a Microsoft Foundry agent (Copilot Studio) — learn.microsoft.com/microsoft-copilot-studio/add-agent-foundry-agent (02/2026, Preview)
 - Agent-to-agent (A2A) tool in Foundry — learn.microsoft.com/azure/foundry/agents/how-to/tools/agent-to-agent (06/2026, Preview)
 - M365 Copilot extensibility FAQ — learn.microsoft.com/microsoft-365/copilot/extensibility/faq (06/2026)
-- microsoft/Agents — AgentFrameworkWeather (.NET) — github.com/microsoft/Agents/tree/main/samples/dotnet/Agent%20Framework
+- microsoft/Agents — Python auth/OBO samples — github.com/microsoft/Agents/tree/main/samples/python
 - Azure-Samples/m365-custom-engine-agents (proxy pattern) — github.com/Azure-Samples/m365-custom-engine-agents
 - Foundry agents as A2A servers — discussion #312 — github.com/orgs/microsoft-foundry/discussions/312
 - MAF RC → GA migration — devblogs.microsoft.com/agent-framework/ (02/2026)
