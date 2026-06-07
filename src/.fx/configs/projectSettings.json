@@ -1,0 +1,12 @@
+{
+  "appName": "OperationsEngineering",
+  "version": "1.0.0",
+  "projectId": "",
+  "isM365": true,
+  "solutionSettings": {
+    "name": "OperationsEngineering",
+    "version": "1.0.0",
+    "activeResourcePlugins": ["fx-resource-bot"],
+    "capabilities": ["bot"]
+  }
+}

@@ -9,25 +9,16 @@ from app.m365_adapter import (
 )
 
 
-def test_response_to_activity_preserves_text_and_citations() -> None:
+def test_response_to_activity_preserves_text() -> None:
     activity = _response_to_activity(
         {
             "type": "message",
             "text": "hello",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.reference",
-                    "content": {"title": "Manual"},
-                }
-            ],
-            "entities": [{"type": "citation", "citation": {"title": "Manual"}}],
         }
     )
 
     assert activity.type == ActivityTypes.message
     assert activity.text == "hello"
-    assert activity.attachments[0].content_type == "application/vnd.microsoft.card.reference"
-    assert activity.entities[0].type == "citation"
 
 
 def test_uses_local_connection_manager_without_bot_auth() -> None:

@@ -9,4 +9,6 @@ async def test_handler_returns_foundry_response_with_citations() -> None:
 
     assert response["type"] == "message"
     assert "hello" in response["text"]
-    assert response["attachments"][0]["content"]["title"] == "Local mock citation"
+    assert "**References**" in response["text"]
+    assert "Local mock citation" in response["text"]
+    assert "attachments" not in response

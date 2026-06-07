@@ -2,7 +2,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.foundry_client import FoundryAgent
-from app.streaming import buffer_updates
+from app.streaming import Citation, buffer_updates
 
 
 class AgentHandler:
@@ -27,19 +27,7 @@ class AgentHandler:
                 user_token=user_token,
             )
         )
-        response = _message_response(response_text)
-        if citations:
-            response["attachments"] = [
-                {
-                    "contentType": "application/vnd.microsoft.card.reference",
-                    "content": citation.to_attachment(),
-                }
-                for citation in citations
-            ]
-            response["entities"] = [
-                {"type": "citation", "citation": citation.to_attachment()} for citation in citations
-            ]
-        return response
+        return _message_response(_append_citations(response_text, citations))
 
 
 def _conversation_id(activity: dict[str, Any]) -> str:
@@ -49,3 +37,20 @@ def _conversation_id(activity: dict[str, Any]) -> str:
 
 def _message_response(text: str) -> dict[str, Any]:
     return {"type": "message", "text": text}
+
+
+def _append_citations(text: str, citations: list[Citation]) -> str:
+    if not citations:
+        return text
+
+    references = []
+    for index, citation in enumerate(citations, start=1):
+        label = citation.title
+        if citation.url:
+            label = f"[{label}]({citation.url})"
+        details = citation.filepath or citation.chunk_id
+        if details:
+            label = f"{label} — {details}"
+        references.append(f"{index}. {label}")
+
+    return f"{text}\n\n**References**\n" + "\n".join(references)
