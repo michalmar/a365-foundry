@@ -6,3 +6,5 @@ __pycache__/
 src/appPackage/build/
 src/env/.env.*
 !src/env/.env.example
+
+SESSIONS.md
