@@ -1,0 +1,31 @@
+version: 1.0.0
+environmentFolderPath: ./env
+provision:
+  - uses: teamsApp/create
+    with:
+      name: OperationsEngineering-${{ENV_NAME}}
+    writeToEnvironmentFile:
+      teamsAppId: TEAMS_APP_ID
+  - uses: botAadApp/create
+    with:
+      name: OperationsEngineering-bot-${{ENV_NAME}}
+    writeToEnvironmentFile:
+      botId: BOT_ID
+  - uses: teamsApp/validateManifest
+    with:
+      manifestPath: ./appPackage/manifest.json
+  - uses: teamsApp/zipAppPackage
+    with:
+      manifestPath: ./appPackage/manifest.json
+      outputZipPath: ./appPackage/build/appPackage.${{ENV_NAME}}.zip
+  - uses: teamsApp/update
+    with:
+      appPackagePath: ./appPackage/build/appPackage.${{ENV_NAME}}.zip
+deploy:
+  - uses: cli/runNpmCommand
+    with:
+      args: --version
+publish:
+  - uses: teamsApp/publishAppPackage
+    with:
+      appPackagePath: ./appPackage/build/appPackage.${{ENV_NAME}}.zip

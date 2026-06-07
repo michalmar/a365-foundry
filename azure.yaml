@@ -1,0 +1,11 @@
+name: a365-foundry
+metadata:
+  template: a365-foundry@0.1.0
+services:
+  agent-host:
+    project: ./src/agent-host
+    host: containerapp
+    language: python
+infra:
+  provider: bicep
+  path: infra
