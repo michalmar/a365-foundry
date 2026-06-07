@@ -20,7 +20,7 @@ Copy `.env.example` to `.env` for local development, then provide equivalent Con
 
 - `PROJECT_ENDPOINT` — Azure AI Foundry project endpoint
 - `FOUNDRY_AGENT` — Foundry agent name, defaults to `OperationsEngineering`
-- `FOUNDRY_AGENT_ID` — optional explicit Foundry agent id; if omitted, the host resolves by name
+- `FOUNDRY_AGENT_VERSION` — optional next-gen Foundry agent version used in `agent_reference`
 - `AZURE_TENANT` and `M365_TENANT`
 - `BOT_ID`
 - `REQUIRE_BOT_AUTH=true` after the Microsoft 365 Agents SDK adapter is fully wired in the target tenant

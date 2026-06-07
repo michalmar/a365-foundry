@@ -32,7 +32,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "azure-ai-projects", specifier = ">=1.0.0" },
+    { name = "azure-ai-projects", specifier = ">=2.1.0" },
     { name = "azure-identity", specifier = ">=1.25.0" },
     { name = "fastapi", specifier = ">=0.124.0" },
     { name = "microsoft-agents-activity", specifier = ">=0.1.0" },

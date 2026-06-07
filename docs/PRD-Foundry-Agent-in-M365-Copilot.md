@@ -81,7 +81,7 @@ End users live in M365 Copilot/Teams. Our Foundry/MAF agent's value is locked in
 
 | Area | Resolution |
 |---|---|
-| Existing Foundry agent | Use the already deployed Foundry agent named **`OperationsEngineering`**. Resolve it from `.env` via `FOUNDRY_AGENT`; if only the name is supplied, the host resolves the agent ID at startup from the Foundry project. |
+| Existing Foundry agent | Use the already deployed next-gen Foundry agent named **`OperationsEngineering`**. Resolve it from `.env` via `FOUNDRY_AGENT` and optionally `FOUNDRY_AGENT_VERSION`; invoke it through `agent_reference`, not legacy `asst...` IDs. |
 | Foundry project | Use `.env` `PROJECT_ENDPOINT`. Do not hard-code endpoint or tenant values in source. |
 | Model deployments | Use `.env` deployment names for chat and summary behavior. |
 | Backend language | **Python**, managed with **UV**. Target the newest Python version that is compatible with the M365 Agents SDK and Azure SDK dependency set; start with Python 3.13 unless Python 3.14 compatibility is verified during build. |
@@ -133,7 +133,7 @@ Governance/build plane:
 | ID | Component | Tech | Notes |
 |----|-----------|------|-------|
 | C1 | **Agents SDK host app** | Python 3.13+ FastAPI + M365 Agents SDK for Python | Exposes `/api/messages`; forwards to the existing Foundry/MAF agent |
-| C2 | **Foundry connector** | `azure-ai-projects` / Foundry Agents SDK preview packages | Uses `PROJECT_ENDPOINT` + `FOUNDRY_AGENT=OperationsEngineering`; resolves Agent ID from name when needed |
+| C2 | **Foundry connector** | `azure-ai-projects>=2.1.0` / next-gen Foundry Responses API | Uses `PROJECT_ENDPOINT` + `FOUNDRY_AGENT=OperationsEngineering` + optional `FOUNDRY_AGENT_VERSION`; sends `agent_reference` through the OpenAI responses client |
 | C3 | **Auth module** | Entra ID, OBO, Bot JWT validation, Azure Identity | User SSO + downstream OBO; Managed Identity host→Foundry |
 | C4 | **App package** | Teams manifest v1.22 + `m365agents.yml` | `copilotAgents.customEngineAgents` binding |
 | C5 | **IaC** | Bicep/azd | Bot Service, Azure Container Apps, Entra apps, App Insights, Managed Identity |
@@ -176,7 +176,7 @@ README.md
 - **Inbound (Copilot/Teams → host):** Azure Bot Service posts to `/api/messages`; the Agents SDK validates the inbound JWT. Bot resource auth = **User-Assigned Managed Identity** (preferred) or Federated Credentials; avoid client secrets in production.
 - **User SSO:** Teams/Copilot SSO surfaces the user token to the host.
 - **Downstream (OBO):** exchange the user token for Graph/LOB scopes via **On-Behalf-Of**. Initial least-privilege scope set: `openid`, `profile`, `offline_access`, `User.Read`; add additional Graph/LOB delegated scopes only when a concrete downstream call requires them. Use the `obo-authorization` / `auto-signin` samples in microsoft/Agents as the reference.
-- **Host → Foundry:** **Managed Identity** + `DefaultAzureCredential` (no API keys in prod). API keys are dev-only. The Python connector reads `PROJECT_ENDPOINT` and `FOUNDRY_AGENT` from environment/config and resolves the agent ID at startup.
+- **Host → Foundry:** **Managed Identity** + `DefaultAzureCredential` (no API keys in prod). API keys are dev-only. The Python connector reads `PROJECT_ENDPOINT`, `FOUNDRY_AGENT`, and optional `FOUNDRY_AGENT_VERSION` from environment/config and invokes the next-gen Foundry agent through `agent_reference`.
 - **`agent.identity` must not be null** for the direct-publish path; publisher needs **Azure Bot Service Contributor** on the RG.
 - **Governance (optional):** assign the agent an Entra **agent identity / Blueprint Identity** for observability and revocation.
 
@@ -191,7 +191,7 @@ README.md
 ### Phase 1 — Production CEA scaffold
 1. Install **M365 Agents Toolkit** (VS Code) + **M365 Agents SDK for Python**.
 2. Scaffold the Python CEA host (C1) with FastAPI `/api/messages`, `pyproject.toml`, `uv.lock`, and Dockerfile.
-3. Wire **C2 Foundry connector** as a proxy to the existing Foundry project endpoint + Foundry agent name/ID (`FOUNDRY_AGENT=OperationsEngineering`).
+3. Wire **C2 Foundry connector** as a proxy to the existing Foundry project endpoint using next-gen `agent_reference` (`FOUNDRY_AGENT=OperationsEngineering`, optional `FOUNDRY_AGENT_VERSION`).
 4. Add **manifest** binding (C4).
 
 ### Phase 2 — Identity & fidelity
@@ -241,6 +241,7 @@ async def messages(request: Request):
 ```bash
 PROJECT_ENDPOINT=<Foundry project endpoint>
 FOUNDRY_AGENT=OperationsEngineering
+FOUNDRY_AGENT_VERSION=<agent version, optional>
 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=<chat deployment>
 AZURE_OPENAI_SUMMARY_DEPLOYMENT_NAME=<summary deployment>
 AZURE_TENANT=<Azure tenant id>
@@ -251,7 +252,7 @@ M365_TENANT=<M365 tenant id>
 ```
 Project endpoint: https://<proj>-resource.services.ai.azure.com/api/projects/<proj>
 Agent name:       OperationsEngineering
-Agent Id:         resolved from Foundry by name at startup, or supplied explicitly if needed
+Agent version:    optional next-gen Foundry agent version, for example 9
 ```
 
 ### 10.4 Manifest snippet (C4)
@@ -315,7 +316,7 @@ devtunnel host -p 3978 --allow-anonymous   # point Bot messaging endpoint at the
 | Exact CS message weights uncertain | Budget | Confirm live pricing |
 | Python SDK preview surface changes | Build/runtime breakage | Pin resolved preview versions in `uv.lock`; isolate SDK calls behind `foundry_client.py` and `agent_handler.py` |
 
-**Open questions:** (1) Which downstream APIs beyond Graph `User.Read` need OBO scopes? (2) Pilot rollout group & admin approver for the CEA app package? (3) Region/data-residency constraints? (4) Whether to later supply an explicit Foundry Agent ID instead of resolving `OperationsEngineering` by name.
+**Open questions:** (1) Which downstream APIs beyond Graph `User.Read` need OBO scopes? (2) Pilot rollout group & admin approver for the CEA app package? (3) Region/data-residency constraints? (4) Which Foundry agent version should be pinned for production rollout?
 
 ---
 

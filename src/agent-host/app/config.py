@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     allow_mock_foundry: bool = Field(default=False, alias="ALLOW_MOCK_FOUNDRY")
     project_endpoint: str | None = Field(default=None, alias="PROJECT_ENDPOINT")
     foundry_agent: str = Field(default="OperationsEngineering", alias="FOUNDRY_AGENT")
-    foundry_agent_id: str | None = Field(default=None, alias="FOUNDRY_AGENT_ID")
+    foundry_agent_version: str | None = Field(default=None, alias="FOUNDRY_AGENT_VERSION")
     azure_openai_chat_deployment_name: str | None = Field(
         default=None, alias="AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"
     )
@@ -59,8 +59,8 @@ class Settings(BaseSettings):
         missing = []
         if not self.project_endpoint:
             missing.append("PROJECT_ENDPOINT")
-        if not self.foundry_agent and not self.foundry_agent_id:
-            missing.append("FOUNDRY_AGENT or FOUNDRY_AGENT_ID")
+        if not self.foundry_agent:
+            missing.append("FOUNDRY_AGENT")
         if missing and not self.should_use_mock_foundry:
             raise ValueError("Missing required production configuration: " + ", ".join(missing))
         if self.require_bot_auth:

@@ -45,7 +45,6 @@ class FoundryAgentClient:
         self._settings = settings
         self._project_client_factory = project_client_factory
         self._project_client: Any | None = None
-        self._agent_id: str | None = settings.foundry_agent_id
 
     async def stream_message(
         self, user_text: str, *, conversation_id: str | None = None, user_token: str | None = None
@@ -53,44 +52,16 @@ class FoundryAgentClient:
         if not self._settings.project_endpoint:
             raise FoundryClientError("PROJECT_ENDPOINT is required for live Foundry calls")
 
-        client = self._get_project_client()
-        agent_id = self._agent_id or self._resolve_agent_id(client)
-        self._agent_id = agent_id
-
-        # The current Foundry SDK may expose sync or async methods depending on version.
-        # Keep the surface isolated here and return buffered updates when streaming is unavailable.
-        agents = getattr(client, "agents", None)
-        if agents is None:
-            raise FoundryClientError("azure-ai-projects client does not expose an agents client")
-
-        thread = self._call_first_existing(agents, ["create_thread", "threads.create"])
-        thread_id = getattr(thread, "id", None) or getattr(thread, "thread_id", None)
-        if not thread_id:
-            raise FoundryClientError("Unable to create Foundry thread")
-
-        self._call_first_existing(
-            agents,
-            ["create_message", "messages.create"],
-            thread_id=thread_id,
-            role="user",
-            content=user_text,
+        project_client = self._get_project_client()
+        openai_client = project_client.get_openai_client()
+        response = openai_client.responses.create(
+            input=[{"role": "user", "content": user_text}],
+            extra_body={"agent_reference": self._agent_reference()},
         )
-        run = self._call_first_existing(
-            agents,
-            ["create_run", "runs.create_and_process", "runs.create"],
-            thread_id=thread_id,
-            agent_id=agent_id,
-        )
-        status = getattr(run, "status", "completed")
-        if status not in {"completed", "succeeded", None}:
-            raise FoundryClientError(f"Foundry run did not complete successfully: {status}")
-
-        messages = self._call_first_existing(
-            agents,
-            ["list_messages", "messages.list"],
-            thread_id=thread_id,
-        )
-        text, citations = self._extract_latest_assistant_message(messages)
+        text = getattr(response, "output_text", None)
+        if not isinstance(text, str):
+            raise FoundryClientError("Foundry response did not include output_text")
+        citations = self._extract_response_citations(response)
         yield AgentUpdate(text_delta=text, citations=citations, done=True)
 
     def _get_project_client(self) -> Any:
@@ -109,70 +80,66 @@ class FoundryAgentClient:
         self._project_client = AIProjectClient(
             endpoint=self._settings.project_endpoint,
             credential=DefaultAzureCredential(),
+            allow_preview=True,
         )
         return self._project_client
 
-    def _resolve_agent_id(self, client: Any) -> str:
-        agents = getattr(client, "agents", None)
-        if agents is None:
-            raise FoundryClientError("azure-ai-projects client does not expose an agents client")
-        foundry_agent_name = self._settings.foundry_agent
-        listed_agents = self._call_first_existing(agents, ["list_agents", "list"])
-        for agent in listed_agents:
-            if getattr(agent, "name", None) == foundry_agent_name:
-                agent_id = getattr(agent, "id", None)
-                if agent_id:
-                    return agent_id
-        raise FoundryClientError(f"Foundry agent not found by name: {foundry_agent_name}")
+    def _agent_reference(self) -> dict[str, str]:
+        reference = {
+            "name": self._settings.foundry_agent,
+            "type": "agent_reference",
+        }
+        if self._settings.foundry_agent_version:
+            reference["version"] = self._settings.foundry_agent_version
+        return reference
 
-    def _call_first_existing(self, root: Any, names: list[str], **kwargs: Any) -> Any:
-        for dotted_name in names:
-            target = root
-            for part in dotted_name.split("."):
-                target = getattr(target, part, None)
-                if target is None:
-                    break
-            if callable(target):
-                try:
-                    return target(**kwargs)
-                except TypeError:
-                    positional = [
-                        kwargs[key]
-                        for key in ("thread_id", "role", "content", "agent_id")
-                        if key in kwargs
-                    ]
-                    return target(*positional)
-        raise FoundryClientError("None of these Foundry SDK methods exist: " + ", ".join(names))
-
-    def _extract_latest_assistant_message(self, messages: Any) -> tuple[str, list[Citation]]:
-        iterable = getattr(messages, "data", messages)
-        for message in iterable:
-            if getattr(message, "role", None) != "assistant":
-                continue
-            return self._extract_text_and_citations(message)
-        raise FoundryClientError("No assistant message returned from Foundry run")
-
-    def _extract_text_and_citations(self, message: Any) -> tuple[str, list[Citation]]:
-        content = getattr(message, "content", "")
+    def _extract_response_citations(self, response: Any) -> list[Citation]:
         citations: list[Citation] = []
-        if isinstance(content, str):
-            return content, citations
-
-        text_parts: list[str] = []
-        for part in content or []:
-            text = getattr(part, "text", None) or getattr(part, "value", None)
-            if isinstance(text, str):
-                text_parts.append(text)
-            annotations = getattr(part, "annotations", []) or []
-            for annotation in annotations:
-                title = getattr(annotation, "title", None) or getattr(annotation, "file_name", None)
-                if title:
-                    citations.append(
-                        Citation(
-                            title=title,
-                            url=getattr(annotation, "url", None),
-                            filepath=getattr(annotation, "file_path", None),
-                            chunk_id=getattr(annotation, "chunk_id", None),
-                        )
+        for annotation in _walk_annotations(getattr(response, "output", []) or []):
+            title = (
+                _get_value(annotation, "title")
+                or _get_value(annotation, "file_name")
+                or _get_value(annotation, "filename")
+            )
+            if title:
+                citations.append(
+                    Citation(
+                        title=title,
+                        url=_get_value(annotation, "url"),
+                        filepath=_get_value(annotation, "file_path")
+                        or _get_value(annotation, "filepath"),
+                        chunk_id=_get_value(annotation, "chunk_id")
+                        or _get_value(annotation, "chunkId"),
                     )
-        return "".join(text_parts), citations
+                )
+        return citations
+
+
+def _walk_annotations(value: Any) -> list[Any]:
+    annotations: list[Any] = []
+    if isinstance(value, dict):
+        nested_annotations = value.get("annotations")
+        if isinstance(nested_annotations, list):
+            annotations.extend(nested_annotations)
+        for nested in value.values():
+            annotations.extend(_walk_annotations(nested))
+    elif isinstance(value, list):
+        for item in value:
+            annotations.extend(_walk_annotations(item))
+    else:
+        nested_annotations = getattr(value, "annotations", None)
+        if isinstance(nested_annotations, list):
+            annotations.extend(nested_annotations)
+        for attr in ("content", "output", "text"):
+            nested = getattr(value, attr, None)
+            if nested is not None:
+                annotations.extend(_walk_annotations(nested))
+    return annotations
+
+
+def _get_value(value: Any, key: str) -> str | None:
+    if isinstance(value, dict):
+        result = value.get(key)
+    else:
+        result = getattr(value, key, None)
+    return result if isinstance(result, str) and result else None
