@@ -6,11 +6,6 @@ provision:
       name: OperationsEngineering-${{ENV_NAME}}
     writeToEnvironmentFile:
       teamsAppId: TEAMS_APP_ID
-  - uses: botAadApp/create
-    with:
-      name: OperationsEngineering-bot-${{ENV_NAME}}
-    writeToEnvironmentFile:
-      botId: BOT_ID
   - uses: teamsApp/validateManifest
     with:
       manifestPath: ./appPackage/manifest.json

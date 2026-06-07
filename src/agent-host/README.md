@@ -22,7 +22,9 @@ Copy `.env.example` to `.env` for local development, then provide equivalent Con
 - `FOUNDRY_AGENT` — Foundry agent name, defaults to `OperationsEngineering`
 - `FOUNDRY_AGENT_VERSION` — optional next-gen Foundry agent version used in `agent_reference`
 - `AZURE_TENANT` and `M365_TENANT`
-- `BOT_ID`
-- `REQUIRE_BOT_AUTH=true` after the Microsoft 365 Agents SDK adapter is fully wired in the target tenant
+- `BOT_ID` — user-assigned managed identity client id used by Azure Bot Service
+- `REQUIRE_BOT_AUTH=true` to use the Microsoft 365 Agents SDK adapter with the configured Bot identity
 
 The production container uses Python 3.13. The local project allows Python 3.12+ so CI and developer machines can run the offline tests before tenant provisioning.
+
+The Container App identity also needs the `Foundry User` role on the Azure AI Foundry account that hosts the project. The Bicep deployment assigns this when `foundryAccountResourceGroup` and `foundryAccountName` are provided.

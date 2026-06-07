@@ -2,9 +2,14 @@ param location string
 param containerAppsEnvironmentName string
 param containerAppName string
 param containerImage string
+param registryServer string
 param projectEndpoint string
 param foundryAgent string
+param foundryAgentVersion string
+param azureTenant string
+param m365Tenant string
 param identityId string
+param identityClientId string
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-a365-foundry'
@@ -53,6 +58,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: env.id
     configuration: {
+      registries: [
+        {
+          server: registryServer
+          identity: identityId
+        }
+      ]
       ingress: {
         external: true
         targetPort: 3978
@@ -76,6 +87,30 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'FOUNDRY_AGENT'
               value: foundryAgent
+            }
+            {
+              name: 'FOUNDRY_AGENT_VERSION'
+              value: foundryAgentVersion
+            }
+            {
+              name: 'AZURE_TENANT'
+              value: azureTenant
+            }
+            {
+              name: 'M365_TENANT'
+              value: m365Tenant
+            }
+            {
+              name: 'BOT_ID'
+              value: identityClientId
+            }
+            {
+              name: 'REQUIRE_BOT_AUTH'
+              value: 'true'
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

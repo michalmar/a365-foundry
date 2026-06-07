@@ -41,17 +41,59 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - name: Install azd
-        uses: Azure/setup-azd@v2
       - name: Azure login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Provision and deploy
+      - name: Build and push image
+        id: image
         env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          CONTAINER_REGISTRY_NAME: ${{ vars.CONTAINER_REGISTRY_NAME }}
+        run: |
+          az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_REGISTRY_NAME" >/dev/null 2>&1 || \
+            az acr create --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_REGISTRY_NAME" --sku Basic --location "$AZURE_LOCATION"
+          REGISTRY_SERVER="$(az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_REGISTRY_NAME" --query loginServer -o tsv)"
+          az acr build --registry "$CONTAINER_REGISTRY_NAME" \
+            --image "agent-host:${GITHUB_SHA}" \
+            --image "agent-host:latest" \
+            src/agent-host
+          echo "registry-server=$REGISTRY_SERVER" >> "$GITHUB_OUTPUT"
+          echo "image=$REGISTRY_SERVER/agent-host:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Provision Azure resources
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          CONTAINER_REGISTRY_NAME: ${{ vars.CONTAINER_REGISTRY_NAME }}
+          CONTAINERAPPS_ENVIRONMENT_NAME: ${{ vars.CONTAINERAPPS_ENVIRONMENT_NAME }}
+          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+          BOT_NAME: ${{ vars.BOT_NAME }}
+          FOUNDRY_AGENT: ${{ vars.FOUNDRY_AGENT }}
+          FOUNDRY_AGENT_VERSION: ${{ vars.FOUNDRY_AGENT_VERSION }}
+          FOUNDRY_ACCOUNT_RESOURCE_GROUP: ${{ vars.FOUNDRY_ACCOUNT_RESOURCE_GROUP }}
+          FOUNDRY_ACCOUNT_NAME: ${{ vars.FOUNDRY_ACCOUNT_NAME }}
           PROJECT_ENDPOINT: ${{ secrets.PROJECT_ENDPOINT }}
-        run: azd up --no-prompt
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          M365_TENANT_ID: ${{ secrets.M365_TENANT_ID }}
+        run: |
+          az deployment group create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              containerImage="${{ steps.image.outputs.image }}" \
+              containerRegistryName="$CONTAINER_REGISTRY_NAME" \
+              registryServer="${{ steps.image.outputs.registry-server }}" \
+              projectEndpoint="$PROJECT_ENDPOINT" \
+              foundryAgent="${FOUNDRY_AGENT:-OperationsEngineering}" \
+              foundryAgentVersion="$FOUNDRY_AGENT_VERSION" \
+              azureTenant="$AZURE_TENANT_ID" \
+              m365Tenant="${M365_TENANT_ID:-$AZURE_TENANT_ID}" \
+              foundryAccountResourceGroup="$FOUNDRY_ACCOUNT_RESOURCE_GROUP" \
+              foundryAccountName="$FOUNDRY_ACCOUNT_NAME" \
+              containerAppsEnvironmentName="${CONTAINERAPPS_ENVIRONMENT_NAME:-cae-a365-foundry}" \
+              containerAppName="${CONTAINER_APP_NAME:-ca-a365-foundry-agent}" \
+              botName="${BOT_NAME:-bot-a365-foundry-agent}"

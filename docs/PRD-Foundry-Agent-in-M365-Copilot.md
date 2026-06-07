@@ -155,7 +155,6 @@ Governance/build plane:
       streaming.py       # streaming + citations adapter
       auth/
         obo_token_service.py
-        bot_auth.py
   /appPackage            # C4
     manifest.json
     color.png  outline.png

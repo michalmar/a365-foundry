@@ -1,7 +1,8 @@
-param location string
 param botName string
 param endpoint string
 param userAssignedIdentityClientId string
+param userAssignedIdentityResourceId string
+param tenantId string
 
 resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
   name: botName
@@ -15,6 +16,8 @@ resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
     endpoint: endpoint
     msaAppType: 'UserAssignedMSI'
     msaAppId: userAssignedIdentityClientId
+    msaAppTenantId: tenantId
+    msaAppMSIResourceId: userAssignedIdentityResourceId
     isCmekEnabled: false
     publicNetworkAccess: 'Enabled'
   }

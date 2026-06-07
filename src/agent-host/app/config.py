@@ -64,12 +64,15 @@ class Settings(BaseSettings):
         if missing and not self.should_use_mock_foundry:
             raise ValueError("Missing required production configuration: " + ", ".join(missing))
         if self.require_bot_auth:
-            raise ValueError(
-                "REQUIRE_BOT_AUTH=true requires tenant-specific Microsoft 365 Agents SDK "
-                "JWT validation wiring. Leave REQUIRE_BOT_AUTH=false for offline/local "
-                "validation, or replace app.auth.bot_auth.BotAuthValidator with the "
-                "configured SDK adapter before enabling it."
-            )
+            auth_missing = []
+            if not self.bot_id:
+                auth_missing.append("BOT_ID")
+            if not (self.m365_tenant or self.azure_tenant):
+                auth_missing.append("M365_TENANT or AZURE_TENANT")
+            if auth_missing:
+                raise ValueError(
+                    "Missing required bot auth configuration: " + ", ".join(auth_missing)
+                )
 
 
 @lru_cache

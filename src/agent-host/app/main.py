@@ -1,11 +1,12 @@
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
+from microsoft_agents.hosting.fastapi import start_agent_process
 
 from app.agent_handler import AgentHandler
-from app.auth.bot_auth import BotAuthValidator
 from app.config import Settings, get_settings
 from app.foundry_client import FoundryAgentClient, MockFoundryAgentClient
+from app.m365_adapter import create_agent_application, create_cloud_adapter
 
 app = FastAPI(title="A365 Foundry Custom Engine Agent", version="0.1.0")
 
@@ -36,12 +37,13 @@ async def healthz(settings: Annotated[Settings, Depends(get_settings)]) -> dict[
     }
 
 
-@app.post("/api/messages")
+@app.post("/api/messages", response_model=None)
 async def messages(
     request: Request,
-    settings: Annotated[Settings, Depends(get_settings)],
     handler: Annotated[AgentHandler, Depends(get_handler)],
-) -> dict[str, Any]:
-    auth = await BotAuthValidator(settings).validate(request)
-    activity = await request.json()
-    return await handler.handle_activity(activity, user_token=auth.user_token)
+) -> Any:
+    return await start_agent_process(
+        request,
+        create_agent_application(handler),
+        create_cloud_adapter(get_settings()),
+    )
